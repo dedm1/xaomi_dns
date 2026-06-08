@@ -19,7 +19,7 @@ object DnsManager {
     }
 
     fun disableDns(context: Context) {
-        Settings.Global.putString(context.contentResolver, "private_dns_mode", "off")
+        Settings.Global.putString(context.contentResolver, "private_dns_mode", "opportunistic")
     }
 
     fun toggleDns(context: Context, dnsAddress: String) {

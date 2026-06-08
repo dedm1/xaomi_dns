@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
     <application
         android:allowBackup="true"
@@ -35,6 +36,21 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/dns_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.DashboardWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.dedm.dns.DASHBOARD_TOGGLE_DNS" />
+                <action android:name="com.dedm.dns.DASHBOARD_OPEN_BATTERY" />
+                <action android:name="com.dedm.dns.DASHBOARD_OPEN_STEPS" />
+                <action android:name="com.dedm.dns.DASHBOARD_REFRESH" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/dashboard_widget_info" />
         </receiver>
 
     </application>
