@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/dashboard_root"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:padding="4dp">
+    android:layout_height="match_parent">
 
-    <!-- Battery Block -->
+    <LinearLayout
+        android:id="@+id/dashboard_root"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:padding="4dp">
+
+        <!-- Battery Block -->
     <FrameLayout
         android:id="@+id/block_battery"
         android:layout_width="0dp"
@@ -139,4 +143,16 @@
         </LinearLayout>
     </FrameLayout>
 
-</LinearLayout>
+    </LinearLayout>
+
+    <!-- Sync Indicator (top-left corner) -->
+    <ImageView
+        android:id="@+id/sync_indicator"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="top|start"
+        android:padding="4dp"
+        android:src="@drawable/ic_sync_indicator"
+        android:scaleType="fitCenter" />
+
+</FrameLayout>

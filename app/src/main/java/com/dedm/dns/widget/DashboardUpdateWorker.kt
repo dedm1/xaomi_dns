@@ -30,6 +30,9 @@ class DashboardUpdateWorker(
             Log.e(TAG, "Failed to read steps", e)
         }
 
+        // Помечаем время синхронизации (сбрасывает индикатор в зелёный)
+        FreshnessIndicator.markSynced(context)
+        
         // Обновляем все виджеты
         DashboardWidgetProvider.refreshAllWidgets(context)
 

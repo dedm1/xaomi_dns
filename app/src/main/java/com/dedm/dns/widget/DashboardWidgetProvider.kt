@@ -26,6 +26,8 @@ class DashboardWidgetProvider : AppWidgetProvider() {
             updateWidget(context, appWidgetManager, appWidgetId)
         }
         updateStepsAsync(context)
+        // Перезапускаем обновление индикатора (на случай если alarm был остановлен системой)
+        IndicatorUpdateReceiver.startUpdates(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -48,17 +50,36 @@ class DashboardWidgetProvider : AppWidgetProvider() {
                 Log.d(TAG, "Refresh requested")
                 updateStepsAsync(context)
             }
+            ACTION_SYNC -> {
+                Log.d(TAG, "Manual sync requested")
+                forceSync(context)
+            }
         }
+    }
+    
+    private fun forceSync(context: Context) {
+        // Помечаем время синхронизации
+        FreshnessIndicator.markSynced(context)
+        // Обновляем индикатор сразу (зелёный)
+        IndicatorUpdateReceiver.updateIndicatorColor(context)
+        // Запускаем полное обновление данных
+        updateStepsAsync(context)
     }
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
+        // Помечаем время первой синхронизации
+        FreshnessIndicator.markSynced(context)
+        // Запускаем периодическое обновление данных (каждые 5 мин)
         schedulePeriodicUpdate(context)
+        // Запускаем обновление индикатора (каждые 5 сек)
+        IndicatorUpdateReceiver.startUpdates(context)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         WorkManager.getInstance(context).cancelUniqueWork(DashboardUpdateWorker.WORK_NAME)
+        IndicatorUpdateReceiver.cancelUpdates(context)
     }
 
     private fun toggleDns(context: Context) {
@@ -113,6 +134,7 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         const val ACTION_OPEN_BATTERY = "com.dedm.dns.DASHBOARD_OPEN_BATTERY"
         const val ACTION_OPEN_STEPS = "com.dedm.dns.DASHBOARD_OPEN_STEPS"
         const val ACTION_REFRESH = "com.dedm.dns.DASHBOARD_REFRESH"
+        const val ACTION_SYNC = "com.dedm.dns.DASHBOARD_SYNC"
         
         private const val COLOR_PENDING = 0xFFFF9800.toInt()  // Оранжевый/жёлтый
         private const val COLOR_ON = 0xFF4CAF50.toInt()       // Зелёный
@@ -124,6 +146,11 @@ class DashboardWidgetProvider : AppWidgetProvider() {
             // Получаем данные
             val batteryTemp = BatteryTemperatureReader.read(context)
             val dnsEnabled = try { DnsManager.isDnsEnabled(context) } catch (e: Exception) { false }
+            
+            // Sync indicator (top-left)
+            val indicatorColor = FreshnessIndicator.getColorForCurrentTime(context)
+            views.setInt(R.id.sync_indicator, "setColorFilter", indicatorColor)
+            views.setOnClickPendingIntent(R.id.sync_indicator, createPendingIntent(context, ACTION_SYNC, 4))
             
             // Battery block
             val batteryColor = BatteryTemperatureReader.getColorForTemp(batteryTemp)

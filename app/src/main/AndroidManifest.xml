@@ -4,6 +4,8 @@
 
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
         android:allowBackup="true"
@@ -47,10 +49,19 @@
                 <action android:name="com.dedm.dns.DASHBOARD_OPEN_BATTERY" />
                 <action android:name="com.dedm.dns.DASHBOARD_OPEN_STEPS" />
                 <action android:name="com.dedm.dns.DASHBOARD_REFRESH" />
+                <action android:name="com.dedm.dns.DASHBOARD_SYNC" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/dashboard_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.IndicatorUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.dedm.dns.UPDATE_INDICATOR" />
+            </intent-filter>
         </receiver>
 
     </application>
