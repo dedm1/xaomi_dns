@@ -18,8 +18,6 @@ object StepsReader {
     private const val TAG = "StepsReader"
 
     suspend fun readTodaySteps(context: Context): Long? {
-        Log.d(TAG, "readTodaySteps called")
-        
         if (!hasPermission(context)) {
             Log.e(TAG, "No ACTIVITY_RECOGNITION permission!")
             return null
@@ -36,14 +34,12 @@ object StepsReader {
             Log.e(TAG, "Step counter sensor not available!")
             return null
         }
-        Log.d(TAG, "Sensor: ${stepSensor.name}, fifoMax=${stepSensor.fifoMaxEventCount}")
 
         val steps = withTimeoutOrNull(3000L) {
             suspendCancellableCoroutine<Long?> { continuation ->
                 val listener = object : SensorEventListener {
                     override fun onSensorChanged(event: SensorEvent) {
                         val steps = event.values.firstOrNull()?.toLong()
-                        Log.d(TAG, "onSensorChanged: steps=$steps")
                         sensorManager.unregisterListener(this)
                         if (continuation.isActive) {
                             continuation.resume(steps)
@@ -61,7 +57,6 @@ object StepsReader {
                 
                 if (registered) {
                     sensorManager.flush(listener)
-                    Log.d(TAG, "Listener registered and flushed")
                 } else {
                     Log.e(TAG, "Failed to register listener!")
                     if (continuation.isActive) {
@@ -75,7 +70,6 @@ object StepsReader {
             }
         }
 
-        Log.d(TAG, "Result: $steps")
         return steps
     }
 

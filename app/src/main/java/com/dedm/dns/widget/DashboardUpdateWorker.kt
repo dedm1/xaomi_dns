@@ -3,6 +3,8 @@ package com.dedm.dns.widget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -17,42 +19,55 @@ class DashboardUpdateWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        Log.d(TAG, "doWork started")
-        
-        // Читаем шаги асинхронно и сохраняем в кэш
-        try {
-            val steps = StepsReader.readTodaySteps(context)
-            Log.d(TAG, "Steps read: $steps")
-            if (steps != null) {
-                saveStepsToCache(context, steps)
+        return try {
+            // Читаем шаги асинхронно и сохраняем в кэш
+            try {
+                val steps = StepsReader.readTodaySteps(context)
+                if (steps != null) {
+                    saveStepsToCache(context, steps)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to read steps", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to read steps", e)
+
+            // Помечаем время синхронизации (сбрасывает индикатор в зелёный)
+            FreshnessIndicator.markSynced(context)
+
+            // Обновляем все виджеты
+            DashboardWidgetProvider.refreshAllWidgets(context)
+            
+            // Планируем следующее обновление через Handler.postDelayed,
+            // чтобы это произошло ПОСЛЕ полного завершения doWork() и освобождения
+            // WorkManager-ресурсов. Иначе REPLACE отменяет текущий "живой" воркер.
+            if (hasDashboardWidgets(context)) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    scheduleNextUpdate(context)
+                }, 200)
+            }
+            
+            Result.success()
+        } catch (t: Throwable) {
+            Log.e(TAG, "doWork failed", t)
+            
+            // Даже при ошибке планируем следующий запуск
+            if (hasDashboardWidgets(context)) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    scheduleNextUpdate(context)
+                }, 200)
+            }
+            
+            Result.retry()
         }
-
-        // Помечаем время синхронизации (сбрасывает индикатор в зелёный)
-        FreshnessIndicator.markSynced(context)
-        
-        // Обновляем все виджеты
-        DashboardWidgetProvider.refreshAllWidgets(context)
-
-        // Планируем следующее обновление если есть виджеты
-        if (hasDashboardWidgets(context)) {
-            scheduleNextUpdate(context)
-        }
-
-        Log.d(TAG, "doWork completed")
-        return Result.success()
     }
 
     companion object {
         private const val TAG = "DashboardWorker"
         const val WORK_NAME = "dashboard_update_work"
-        private const val UPDATE_INTERVAL_MINUTES = 5L
+        private const val UPDATE_INTERVAL_SECONDS = 300L
 
         fun scheduleNextUpdate(context: Context) {
             val request = OneTimeWorkRequestBuilder<DashboardUpdateWorker>()
-                .setInitialDelay(UPDATE_INTERVAL_MINUTES, TimeUnit.MINUTES)
+                .setInitialDelay(UPDATE_INTERVAL_SECONDS, TimeUnit.SECONDS)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniqueWork(

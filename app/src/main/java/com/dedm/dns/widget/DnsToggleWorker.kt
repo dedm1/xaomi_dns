@@ -20,15 +20,12 @@ class DnsToggleWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        Log.d(TAG, "doWork: toggling DNS")
-        
         val repository = DnsRepository(context)
         val history = repository.getDnsHistory()
         val targetDns = history.firstOrNull() ?: "dns.adguard-dns.com"
 
         try {
             DnsManager.toggleDns(context, targetDns)
-            Log.d(TAG, "DNS toggled successfully")
         } catch (e: SecurityException) {
             Log.e(TAG, "No WRITE_SECURE_SETTINGS permission", e)
         } catch (e: Exception) {

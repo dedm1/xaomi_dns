@@ -15,8 +15,6 @@ import com.dedm.dns.R
 class IndicatorUpdateReceiver : BroadcastReceiver() {
     
     override fun onReceive(context: Context, intent: Intent) {
-        Log.d(TAG, "Indicator update tick")
-        
         // Обновляем только цвет индикатора (partial update)
         updateIndicatorColor(context)
         
@@ -95,13 +93,11 @@ class IndicatorUpdateReceiver : BroadcastReceiver() {
         }
         
         fun startUpdates(context: Context) {
-            Log.d(TAG, "Starting indicator updates")
             updateIndicatorColor(context)
             scheduleNextUpdate(context)
         }
         
         fun cancelUpdates(context: Context) {
-            Log.d(TAG, "Canceling indicator updates")
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val intent = Intent(context, IndicatorUpdateReceiver::class.java).apply {
                 action = ACTION_UPDATE_INDICATOR

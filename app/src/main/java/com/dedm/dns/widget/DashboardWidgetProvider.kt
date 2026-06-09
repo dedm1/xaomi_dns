@@ -21,11 +21,11 @@ import java.time.ZoneId
 class DashboardWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        Log.d(TAG, "onUpdate: ${appWidgetIds.size} widgets")
         for (appWidgetId in appWidgetIds) {
             updateWidget(context, appWidgetManager, appWidgetId)
         }
-        updateStepsAsync(context)
+        // НЕ вызываем updateStepsAsync здесь — воркер сам планирует следующий запуск.
+        // Иначе каждый onUpdate отменяет запланированный интервал воркера.
         // Перезапускаем обновление индикатора (на случай если alarm был остановлен системой)
         IndicatorUpdateReceiver.startUpdates(context)
     }
@@ -35,23 +35,18 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         
         when (intent.action) {
             ACTION_TOGGLE_DNS -> {
-                Log.d(TAG, "Toggle DNS clicked")
                 toggleDns(context)
             }
             ACTION_OPEN_BATTERY -> {
-                Log.d(TAG, "Battery clicked")
                 openBatterySettings(context)
             }
             ACTION_OPEN_STEPS -> {
-                Log.d(TAG, "Steps clicked")
                 openStepsApp(context)
             }
             ACTION_REFRESH -> {
-                Log.d(TAG, "Refresh requested")
                 updateStepsAsync(context)
             }
             ACTION_SYNC -> {
-                Log.d(TAG, "Manual sync requested")
                 forceSync(context)
             }
         }
@@ -70,7 +65,7 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         super.onEnabled(context)
         // Помечаем время первой синхронизации
         FreshnessIndicator.markSynced(context)
-        // Запускаем периодическое обновление данных (каждые 5 мин)
+        // Запускаем периодическое обновление данных (временно каждые 5 сек)
         schedulePeriodicUpdate(context)
         // Запускаем обновление индикатора (каждые 5 сек)
         IndicatorUpdateReceiver.startUpdates(context)
@@ -84,7 +79,6 @@ class DashboardWidgetProvider : AppWidgetProvider() {
 
     private fun toggleDns(context: Context) {
         showPendingDnsState(context)
-        Log.d(TAG, "Pending shown, scheduling toggle via WorkManager")
         
         DnsToggleWorker.enqueue(context)
     }
@@ -179,7 +173,6 @@ class DashboardWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.block_dns, createPendingIntent(context, ACTION_TOGGLE_DNS, 3))
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
-            Log.d(TAG, "Widget $appWidgetId updated: battery=$batteryTemp dns=$dnsEnabled steps=$cachedSteps")
         }
 
         fun showPendingDnsState(context: Context) {
@@ -195,7 +188,6 @@ class DashboardWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.dns_text, "...")
                 appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
             }
-            Log.d(TAG, "Pending DNS state shown (partial)")
         }
 
         fun refreshAllWidgets(context: Context) {
@@ -257,15 +249,7 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         }
 
         fun schedulePeriodicUpdate(context: Context) {
-            val request = OneTimeWorkRequestBuilder<DashboardUpdateWorker>()
-                .setInitialDelay(5, java.util.concurrent.TimeUnit.MINUTES)
-                .build()
-            
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                DashboardUpdateWorker.WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
-                request
-            )
+            DashboardUpdateWorker.scheduleNextUpdate(context)
         }
     }
 }
