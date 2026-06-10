@@ -38,6 +38,11 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.dedm.dns.widget.DashboardUpdateWorker
 import com.dedm.dns.widget.DashboardWidgetProvider
 import com.dedm.dns.widget.StepsCalculator
+import com.dedm.dns.widget.StepsReader
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.StepsRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,12 +64,49 @@ class MainActivity : ComponentActivity() {
 fun DnsSwitcherApp() {
     val context = LocalContext.current
     var showWidgetMenu by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val healthPermissions = remember {
+        setOf(HealthPermission.getReadPermission(StepsRecord::class))
+    }
+
+    fun pinDashboardAndSync() {
+        WidgetPinHelper.pinDashboardWidget(context)
+        DashboardUpdateWorker.scheduleImmediateUpdate(context)
+    }
+
+    val healthPermissionLauncher = rememberLauncherForActivityResult(
+        contract = PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        if (granted.containsAll(healthPermissions)) {
+            pinDashboardAndSync()
+        } else {
+            Toast.makeText(
+                context,
+                "Для шагов нужно разрешение Health Connect",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun ensureHealthPermissionThenAddWidget() {
+        if (!StepsReader.isHealthConnectAvailable(context)) {
+            Toast.makeText(context, "Health Connect недоступен на устройстве", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        scope.launch {
+            if (StepsReader.hasPermissionAsync(context)) {
+                pinDashboardAndSync()
+            } else {
+                healthPermissionLauncher.launch(healthPermissions)
+            }
+        }
+    }
 
     val activityPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ ->
-        WidgetPinHelper.pinDashboardWidget(context)
-        DashboardUpdateWorker.scheduleImmediateUpdate(context)
+        ensureHealthPermissionThenAddWidget()
     }
 
     fun addDashboardWidget() {
@@ -76,8 +118,7 @@ fun DnsSwitcherApp() {
         if (!hasPermission) {
             activityPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
         } else {
-            WidgetPinHelper.pinDashboardWidget(context)
-            DashboardUpdateWorker.scheduleImmediateUpdate(context)
+            ensureHealthPermissionThenAddWidget()
         }
     }
 
@@ -369,6 +410,25 @@ fun DnsSwitcherScreen() {
 private fun UserSettingsSection(context: Context) {
     var heightCm by remember { mutableIntStateOf(StepsCalculator.getHeightCm(context)) }
     var isMale by remember { mutableStateOf(StepsCalculator.isMale(context)) }
+    var hasHealthConnectPermission by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // Проверяем разрешение Health Connect при входе
+    LaunchedEffect(Unit) {
+        hasHealthConnectPermission = StepsReader.hasPermissionAsync(context)
+    }
+
+    // Лаунчер для запроса разрешений Health Connect
+    val healthConnectLauncher = rememberLauncherForActivityResult(
+        contract = PermissionController.createRequestPermissionResultContract()
+    ) { _ ->
+        scope.launch {
+            hasHealthConnectPermission = StepsReader.hasPermissionAsync(context)
+            if (hasHealthConnectPermission) {
+                DashboardUpdateWorker.scheduleImmediateUpdate(context)
+            }
+        }
+    }
 
     Spacer(modifier = Modifier.height(32.dp))
 
@@ -473,6 +533,40 @@ private fun UserSettingsSection(context: Context) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    // Кнопка разрешения Health Connect
+    if (StepsReader.isHealthConnectAvailable(context)) {
+        Button(
+            onClick = {
+                val permissions = setOf(
+                    HealthPermission.getReadPermission(StepsRecord::class)
+                )
+                healthConnectLauncher.launch(permissions)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (hasHealthConnectPermission) 
+                    MaterialTheme.colorScheme.primary 
+                else 
+                    MaterialTheme.colorScheme.error
+            )
+        ) {
+            Text(
+                if (hasHealthConnectPermission) 
+                    "✓ Health Connect подключён" 
+                else 
+                    "Подключить Health Connect"
+            )
+        }
+    } else {
+        Text(
+            text = "Health Connect недоступен на этом устройстве",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
 }
 
 private fun updateWidgets(context: android.content.Context) {

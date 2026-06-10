@@ -234,13 +234,21 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         fun saveStepsToCache(context: Context, steps: Long) {
             val prefs = context.getSharedPreferences(CACHE_PREFS, Context.MODE_PRIVATE)
             val today = LocalDate.now(ZoneId.systemDefault()).toString()
-            val yesterday = LocalDate.now(ZoneId.systemDefault()).minusDays(1).toString()
+            val minDateToKeep = LocalDate.now(ZoneId.systemDefault()).minusDays(4)
             
             prefs.edit().apply {
                 putLong("steps_$today", steps)
-                // Удаляем кэш за более старые дни, чтобы не засорять память
+                // Храним только последние 5 дней, чтобы не раздувать кэш
                 prefs.all.keys.forEach { key ->
-                    if (key.startsWith("steps_") && key != "steps_$today" && key != "steps_$yesterday") {
+                    if (!key.startsWith("steps_") || key == "steps_$today") {
+                        return@forEach
+                    }
+
+                    val cachedDate = runCatching {
+                        LocalDate.parse(key.removePrefix("steps_"))
+                    }.getOrNull()
+
+                    if (cachedDate == null || cachedDate.isBefore(minDateToKeep)) {
                         remove(key)
                     }
                 }

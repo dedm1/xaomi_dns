@@ -1,82 +1,68 @@
 package com.dedm.dns.widget
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import android.util.Log
-import androidx.core.content.ContextCompat
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.coroutines.resume
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.time.TimeRangeFilter
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 object StepsReader {
 
     private const val TAG = "StepsReader"
 
     suspend fun readTodaySteps(context: Context): Long? {
-        if (!hasPermission(context)) {
-            Log.e(TAG, "No ACTIVITY_RECOGNITION permission!")
+        if (!isHealthConnectAvailable(context)) {
+            Log.e(TAG, "Health Connect is not available!")
             return null
         }
 
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        if (sensorManager == null) {
-            Log.e(TAG, "SensorManager is null!")
+        val client = HealthConnectClient.getOrCreate(context)
+        
+        if (!hasPermissionAsync(context)) {
+            Log.e(TAG, "No READ_STEPS permission for Health Connect!")
             return null
         }
 
-        val stepSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
-        if (stepSensor == null) {
-            Log.e(TAG, "Step counter sensor not available!")
-            return null
-        }
+        return try {
+            val today = LocalDate.now()
+            val startOfDay = today.atStartOfDay(ZoneId.systemDefault()).toInstant()
+            val now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant()
 
-        val steps = withTimeoutOrNull(3000L) {
-            suspendCancellableCoroutine<Long?> { continuation ->
-                val listener = object : SensorEventListener {
-                    override fun onSensorChanged(event: SensorEvent) {
-                        val steps = event.values.firstOrNull()?.toLong()
-                        sensorManager.unregisterListener(this)
-                        if (continuation.isActive) {
-                            continuation.resume(steps)
-                        }
-                    }
-
-                    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-                }
-
-                val registered = sensorManager.registerListener(
-                    listener,
-                    stepSensor,
-                    SensorManager.SENSOR_DELAY_FASTEST
+            val response = client.aggregate(
+                AggregateRequest(
+                    metrics = setOf(StepsRecord.COUNT_TOTAL),
+                    timeRangeFilter = TimeRangeFilter.between(startOfDay, now)
                 )
-                
-                if (registered) {
-                    sensorManager.flush(listener)
-                } else {
-                    Log.e(TAG, "Failed to register listener!")
-                    if (continuation.isActive) {
-                        continuation.resume(null)
-                    }
-                }
+            )
 
-                continuation.invokeOnCancellation {
-                    sensorManager.unregisterListener(listener)
-                }
-            }
+            response[StepsRecord.COUNT_TOTAL] ?: 0L
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read steps from Health Connect", e)
+            null
         }
-
-        return steps
     }
 
+    fun isHealthConnectAvailable(context: Context): Boolean {
+        val status = HealthConnectClient.getSdkStatus(context)
+        return status == HealthConnectClient.SDK_AVAILABLE
+    }
+
+    suspend fun hasPermissionAsync(context: Context): Boolean {
+        if (!isHealthConnectAvailable(context)) {
+            return false
+        }
+        val client = HealthConnectClient.getOrCreate(context)
+        val granted = client.permissionController.getGrantedPermissions()
+        return HealthPermission.getReadPermission(StepsRecord::class) in granted
+    }
+
+    // Синхронная проверка для виджета (только доступность Health Connect)
     fun hasPermission(context: Context): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACTIVITY_RECOGNITION
-        ) == PackageManager.PERMISSION_GRANTED
+        return isHealthConnectAvailable(context)
     }
 }
