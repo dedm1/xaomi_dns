@@ -75,9 +75,10 @@
 
         <receiver
             android:name=".widget.IndicatorUpdateReceiver"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="com.dedm.dns.UPDATE_INDICATOR" />
+                <action android:name="android.intent.action.USER_PRESENT" />
             </intent-filter>
         </receiver>
 

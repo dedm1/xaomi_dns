@@ -3,8 +3,6 @@ package com.dedm.dns.widget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -19,6 +17,12 @@ class DashboardUpdateWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // Сначала планируем следующий запуск — WorkManager сохраняет это на диск,
+        // поэтому даже если MIUI убьет процесс, следующее обновление всё равно произойдёт.
+        if (hasDashboardWidgets(context)) {
+            scheduleNextUpdate(context)
+        }
+
         return try {
             // Читаем шаги асинхронно и сохраняем в кэш
             try {
@@ -35,27 +39,10 @@ class DashboardUpdateWorker(
 
             // Обновляем все виджеты
             DashboardWidgetProvider.refreshAllWidgets(context)
-            
-            // Планируем следующее обновление через Handler.postDelayed,
-            // чтобы это произошло ПОСЛЕ полного завершения doWork() и освобождения
-            // WorkManager-ресурсов. Иначе REPLACE отменяет текущий "живой" воркер.
-            if (hasDashboardWidgets(context)) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    scheduleNextUpdate(context)
-                }, 200)
-            }
-            
+
             Result.success()
         } catch (t: Throwable) {
             Log.e(TAG, "doWork failed", t)
-            
-            // Даже при ошибке планируем следующий запуск
-            if (hasDashboardWidgets(context)) {
-                Handler(Looper.getMainLooper()).postDelayed({
-                    scheduleNextUpdate(context)
-                }, 200)
-            }
-            
             Result.retry()
         }
     }
@@ -63,6 +50,7 @@ class DashboardUpdateWorker(
     companion object {
         private const val TAG = "DashboardWorker"
         const val WORK_NAME = "dashboard_update_work"
+        private const val WORK_NAME_PERIODIC = "dashboard_periodic_update"
         private const val UPDATE_INTERVAL_SECONDS = 300L
 
         fun scheduleNextUpdate(context: Context) {
@@ -70,15 +58,17 @@ class DashboardUpdateWorker(
                 .setInitialDelay(UPDATE_INTERVAL_SECONDS, TimeUnit.SECONDS)
                 .build()
 
+            // KEEP — не отменяет уже запланированный периодический воркер
             WorkManager.getInstance(context).enqueueUniqueWork(
-                WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                WORK_NAME_PERIODIC,
+                ExistingWorkPolicy.KEEP,
                 request
             )
         }
 
         fun scheduleImmediateUpdate(context: Context) {
             val request = OneTimeWorkRequestBuilder<DashboardUpdateWorker>().build()
+            // Немедленное обновление идёт под отдельным именем, не трогает периодическую цепочку
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME,
                 ExistingWorkPolicy.REPLACE,

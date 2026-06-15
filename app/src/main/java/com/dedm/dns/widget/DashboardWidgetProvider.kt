@@ -26,7 +26,6 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         }
         // НЕ вызываем updateStepsAsync здесь — воркер сам планирует следующий запуск.
         // Иначе каждый onUpdate отменяет запланированный интервал воркера.
-        // Перезапускаем обновление индикатора (на случай если alarm был остановлен системой)
         IndicatorUpdateReceiver.startUpdates(context)
     }
 
@@ -50,13 +49,14 @@ class DashboardWidgetProvider : AppWidgetProvider() {
                 forceSync(context)
             }
         }
+        IndicatorUpdateReceiver.startUpdates(context)
     }
     
     private fun forceSync(context: Context) {
         // Помечаем время синхронизации
         FreshnessIndicator.markSynced(context)
         // Обновляем индикатор сразу (зелёный)
-        IndicatorUpdateReceiver.updateIndicatorColor(context)
+        refreshAllWidgets(context)
         // Запускаем полное обновление данных
         updateStepsAsync(context)
     }
@@ -65,15 +65,16 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         super.onEnabled(context)
         // Помечаем время первой синхронизации
         FreshnessIndicator.markSynced(context)
-        // Запускаем периодическое обновление данных (временно каждые 5 сек)
+        // Запускаем периодическое обновление данных
         schedulePeriodicUpdate(context)
-        // Запускаем обновление индикатора (каждые 5 сек)
+        // Запускаем обновление индикатора
         IndicatorUpdateReceiver.startUpdates(context)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         WorkManager.getInstance(context).cancelUniqueWork(DashboardUpdateWorker.WORK_NAME)
+        WorkManager.getInstance(context).cancelUniqueWork("dashboard_periodic_update")
         IndicatorUpdateReceiver.cancelUpdates(context)
     }
 
