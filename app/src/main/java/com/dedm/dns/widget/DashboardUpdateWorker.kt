@@ -1,7 +1,5 @@
 package com.dedm.dns.widget
 
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
@@ -9,7 +7,6 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import java.util.concurrent.TimeUnit
 
 class DashboardUpdateWorker(
     private val context: Context,
@@ -17,54 +14,33 @@ class DashboardUpdateWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        // Сначала планируем следующий запуск — WorkManager сохраняет это на диск,
-        // поэтому даже если MIUI убьет процесс, следующее обновление всё равно произойдёт.
-        if (hasDashboardWidgets(context)) {
-            scheduleNextUpdate(context)
-        }
-
-        return try {
+        var syncSuccessful = false
+        try {
             // Читаем шаги асинхронно и сохраняем в кэш
-            try {
-                val steps = StepsReader.readTodaySteps(context)
-                if (steps != null) {
-                    saveStepsToCache(context, steps)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to read steps", e)
+            val steps = StepsReader.readTodaySteps(context)
+            if (steps != null) {
+                saveStepsToCache(context, steps)
+                syncSuccessful = true
             }
 
-            // Помечаем время синхронизации (сбрасывает индикатор в зелёный)
-            FreshnessIndicator.markSynced(context)
+            if (syncSuccessful) {
+                // Помечаем время успешной синхронизации (сбрасывает индикатор в зелёный)
+                FreshnessIndicator.markSynced(context)
+            }
 
-            // Обновляем все виджеты
-            DashboardWidgetProvider.refreshAllWidgets(context)
-
-            Result.success()
+            return Result.success()
         } catch (t: Throwable) {
             Log.e(TAG, "doWork failed", t)
-            Result.retry()
+            return Result.retry()
+        } finally {
+            // Обновляем все виджеты (это также восстановит корректный цвет индикатора из кэша)
+            DashboardWidgetProvider.refreshAllWidgets(context)
         }
     }
 
     companion object {
         private const val TAG = "DashboardWorker"
         const val WORK_NAME = "dashboard_update_work"
-        private const val WORK_NAME_PERIODIC = "dashboard_periodic_update"
-        private const val UPDATE_INTERVAL_SECONDS = 300L
-
-        fun scheduleNextUpdate(context: Context) {
-            val request = OneTimeWorkRequestBuilder<DashboardUpdateWorker>()
-                .setInitialDelay(UPDATE_INTERVAL_SECONDS, TimeUnit.SECONDS)
-                .build()
-
-            // KEEP — не отменяет уже запланированный периодический воркер
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                WORK_NAME_PERIODIC,
-                ExistingWorkPolicy.KEEP,
-                request
-            )
-        }
 
         fun scheduleImmediateUpdate(context: Context) {
             val request = OneTimeWorkRequestBuilder<DashboardUpdateWorker>().build()
@@ -78,13 +54,6 @@ class DashboardUpdateWorker(
 
         private fun saveStepsToCache(context: Context, steps: Long) {
             DashboardWidgetProvider.saveStepsToCache(context, steps)
-        }
-
-        private fun hasDashboardWidgets(context: Context): Boolean {
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val componentName = ComponentName(context, DashboardWidgetProvider::class.java)
-            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-            return appWidgetIds.isNotEmpty()
         }
     }
 }

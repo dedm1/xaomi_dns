@@ -45,7 +45,7 @@ object FreshnessIndicator {
     
     fun getLastSyncTime(context: Context): Long {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getLong(KEY_LAST_SYNC, System.currentTimeMillis())
+        return prefs.getLong(KEY_LAST_SYNC, 0L)
     }
     
     fun markSynced(context: Context) {

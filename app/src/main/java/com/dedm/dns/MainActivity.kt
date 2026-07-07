@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -66,7 +67,10 @@ fun DnsSwitcherApp() {
     var showWidgetMenu by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val healthPermissions = remember {
-        setOf(HealthPermission.getReadPermission(StepsRecord::class))
+        setOf(
+            HealthPermission.getReadPermission(StepsRecord::class),
+            "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
+        )
     }
 
     fun pinDashboardAndSync() {
@@ -76,15 +80,35 @@ fun DnsSwitcherApp() {
 
     val healthPermissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract()
-    ) { granted ->
-        if (granted.containsAll(healthPermissions)) {
-            pinDashboardAndSync()
-        } else {
-            Toast.makeText(
-                context,
-                "Для шагов нужно разрешение Health Connect",
-                Toast.LENGTH_LONG
-            ).show()
+    ) { _ ->
+        scope.launch {
+            val hasBasic = StepsReader.hasBasicPermissionAsync(context)
+            val hasBg = StepsReader.hasBackgroundPermissionAsync(context)
+            if (hasBasic) {
+                pinDashboardAndSync()
+                if (!hasBg) {
+                    Toast.makeText(
+                        context,
+                        "Включите «Доступ к данным в фоновом режиме» в разделе «Дополнительный доступ»",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    try {
+                        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                            Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+                                .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+                        } else {
+                            Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {}
+                }
+            } else {
+                Toast.makeText(
+                    context,
+                    "Для шагов нужно разрешение Health Connect",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -95,10 +119,28 @@ fun DnsSwitcherApp() {
         }
 
         scope.launch {
-            if (StepsReader.hasPermissionAsync(context)) {
+            val hasBasic = StepsReader.hasBasicPermissionAsync(context)
+            val hasBg = StepsReader.hasBackgroundPermissionAsync(context)
+            if (hasBasic && hasBg) {
                 pinDashboardAndSync()
-            } else {
+            } else if (!hasBasic) {
                 healthPermissionLauncher.launch(healthPermissions)
+            } else {
+                pinDashboardAndSync()
+                Toast.makeText(
+                    context,
+                    "Включите «Доступ к данным в фоновом режиме» в разделе «Дополнительный доступ»",
+                    Toast.LENGTH_LONG
+                ).show()
+                try {
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+                            .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+                    } else {
+                        Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {}
             }
         }
     }
@@ -410,12 +452,22 @@ fun DnsSwitcherScreen() {
 private fun UserSettingsSection(context: Context) {
     var heightCm by remember { mutableIntStateOf(StepsCalculator.getHeightCm(context)) }
     var isMale by remember { mutableStateOf(StepsCalculator.isMale(context)) }
-    var hasHealthConnectPermission by remember { mutableStateOf(false) }
+    var hasBasicPermission by remember { mutableStateOf(false) }
+    var hasBackgroundPermission by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Проверяем разрешение Health Connect при входе
     LaunchedEffect(Unit) {
-        hasHealthConnectPermission = StepsReader.hasPermissionAsync(context)
+        hasBasicPermission = StepsReader.hasBasicPermissionAsync(context)
+        hasBackgroundPermission = StepsReader.hasBackgroundPermissionAsync(context)
+    }
+
+    // Обновляем состояние разрешений при возвращении в приложение
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        scope.launch {
+            hasBasicPermission = StepsReader.hasBasicPermissionAsync(context)
+            hasBackgroundPermission = StepsReader.hasBackgroundPermissionAsync(context)
+        }
     }
 
     // Лаунчер для запроса разрешений Health Connect
@@ -423,8 +475,9 @@ private fun UserSettingsSection(context: Context) {
         contract = PermissionController.createRequestPermissionResultContract()
     ) { _ ->
         scope.launch {
-            hasHealthConnectPermission = StepsReader.hasPermissionAsync(context)
-            if (hasHealthConnectPermission) {
+            hasBasicPermission = StepsReader.hasBasicPermissionAsync(context)
+            hasBackgroundPermission = StepsReader.hasBackgroundPermissionAsync(context)
+            if (hasBasicPermission && hasBackgroundPermission) {
                 DashboardUpdateWorker.scheduleImmediateUpdate(context)
             }
         }
@@ -538,27 +591,59 @@ private fun UserSettingsSection(context: Context) {
 
     // Кнопка разрешения Health Connect
     if (StepsReader.isHealthConnectAvailable(context)) {
+        val buttonColor = when {
+            hasBasicPermission && hasBackgroundPermission -> MaterialTheme.colorScheme.primary
+            hasBasicPermission -> Color(0xFFFF9800) // Оранжевый/Жёлтый (требуется доступ в фоне)
+            else -> MaterialTheme.colorScheme.error // Красный (нет базовых разрешений)
+        }
+
+        val buttonText = when {
+            hasBasicPermission && hasBackgroundPermission -> "✓ Health Connect подключён"
+            hasBasicPermission -> "Разрешить работу в фоне"
+            else -> "Подключить Health Connect"
+        }
+
         Button(
             onClick = {
-                val permissions = setOf(
-                    HealthPermission.getReadPermission(StepsRecord::class)
-                )
-                healthConnectLauncher.launch(permissions)
+                scope.launch {
+                    if (!hasBasicPermission) {
+                        val permissions = setOf(HealthPermission.getReadPermission(StepsRecord::class))
+                        healthConnectLauncher.launch(permissions)
+                    } else if (!hasBackgroundPermission) {
+                        Toast.makeText(
+                            context,
+                            "Включите «Доступ к данным в фоновом режиме» в разделе «Дополнительный доступ»",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        try {
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+                                    .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+                            } else {
+                                Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Не удалось открыть настройки", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        // Если всё уже подключено, просто открываем настройки для управления
+                        try {
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                                Intent("android.health.connect.action.MANAGE_HEALTH_PERMISSIONS")
+                                    .putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
+                            } else {
+                                Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                    }
+                }
             },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (hasHealthConnectPermission) 
-                    MaterialTheme.colorScheme.primary 
-                else 
-                    MaterialTheme.colorScheme.error
-            )
+            colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
         ) {
-            Text(
-                if (hasHealthConnectPermission) 
-                    "✓ Health Connect подключён" 
-                else 
-                    "Подключить Health Connect"
-            )
+            Text(buttonText)
         }
     } else {
         Text(

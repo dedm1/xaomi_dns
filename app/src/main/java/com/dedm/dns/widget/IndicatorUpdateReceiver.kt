@@ -12,6 +12,9 @@ import android.os.PowerManager
 import android.util.Log
 import android.widget.RemoteViews
 import com.dedm.dns.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class IndicatorUpdateReceiver : BroadcastReceiver() {
     
@@ -25,6 +28,16 @@ class IndicatorUpdateReceiver : BroadcastReceiver() {
         // Обновляем только цвет индикатора (partial update)
         updateIndicatorColor(context)
         
+        // Проверяем, нужно ли запустить фоновую синхронизацию
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                checkAndScheduleSyncIfNeeded(context)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+        
         // Планируем следующее обновление через 5 секунд
         scheduleNextUpdate(context)
     }
@@ -33,6 +46,19 @@ class IndicatorUpdateReceiver : BroadcastReceiver() {
         private const val TAG = "IndicatorReceiver"
         const val ACTION_UPDATE_INDICATOR = "com.dedm.dns.UPDATE_INDICATOR"
         private const val UPDATE_INTERVAL_MS = 5000L // 5 секунд
+
+        private suspend fun checkAndScheduleSyncIfNeeded(context: Context) {
+            val lastSync = FreshnessIndicator.getLastSyncTime(context)
+            val elapsedMs = System.currentTimeMillis() - lastSync
+            if (elapsedMs >= 300_000L) {
+                if (StepsReader.hasPermissionAsync(context)) {
+                    Log.d(TAG, "Sync is stale (elapsed ${elapsedMs / 1000}s) and permission granted, scheduling update")
+                    DashboardWidgetProvider.updateStepsAsync(context)
+                } else {
+                    Log.d(TAG, "Sync is stale but Health Connect permission not granted, skipping update")
+                }
+            }
+        }
         
         fun updateIndicatorColor(context: Context) {
             val appWidgetManager = AppWidgetManager.getInstance(context)

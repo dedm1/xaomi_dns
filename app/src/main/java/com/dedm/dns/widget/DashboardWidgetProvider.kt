@@ -53,21 +53,15 @@ class DashboardWidgetProvider : AppWidgetProvider() {
     }
     
     private fun forceSync(context: Context) {
-        // Помечаем время синхронизации
-        FreshnessIndicator.markSynced(context)
-        // Обновляем индикатор сразу (зелёный)
-        refreshAllWidgets(context)
+        // Устанавливаем индикатор в оранжевый (синхронизация в процессе)
+        showPendingSyncState(context)
         // Запускаем полное обновление данных
         updateStepsAsync(context)
     }
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        // Помечаем время первой синхронизации
-        FreshnessIndicator.markSynced(context)
-        // Запускаем периодическое обновление данных
-        schedulePeriodicUpdate(context)
-        // Запускаем обновление индикатора
+        // Запускаем обновление индикатора (первая синхронизация произойдет автоматически)
         IndicatorUpdateReceiver.startUpdates(context)
     }
 
@@ -191,6 +185,18 @@ class DashboardWidgetProvider : AppWidgetProvider() {
             }
         }
 
+        fun showPendingSyncState(context: Context) {
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            val componentName = ComponentName(context, DashboardWidgetProvider::class.java)
+            val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
+
+            for (appWidgetId in appWidgetIds) {
+                val views = RemoteViews(context.packageName, R.layout.dashboard_widget)
+                views.setInt(R.id.sync_indicator, "setColorFilter", COLOR_PENDING)
+                appWidgetManager.partiallyUpdateAppWidget(appWidgetId, views)
+            }
+        }
+
         fun refreshAllWidgets(context: Context) {
             val appWidgetManager = AppWidgetManager.getInstance(context)
             val componentName = ComponentName(context, DashboardWidgetProvider::class.java)
@@ -257,8 +263,5 @@ class DashboardWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        fun schedulePeriodicUpdate(context: Context) {
-            DashboardUpdateWorker.scheduleNextUpdate(context)
-        }
     }
 }

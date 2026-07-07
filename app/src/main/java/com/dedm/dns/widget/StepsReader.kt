@@ -52,13 +52,26 @@ object StepsReader {
         return status == HealthConnectClient.SDK_AVAILABLE
     }
 
-    suspend fun hasPermissionAsync(context: Context): Boolean {
+    suspend fun hasBasicPermissionAsync(context: Context): Boolean {
         if (!isHealthConnectAvailable(context)) {
             return false
         }
         val client = HealthConnectClient.getOrCreate(context)
         val granted = client.permissionController.getGrantedPermissions()
         return HealthPermission.getReadPermission(StepsRecord::class) in granted
+    }
+
+    suspend fun hasBackgroundPermissionAsync(context: Context): Boolean {
+        if (!isHealthConnectAvailable(context)) {
+            return false
+        }
+        val client = HealthConnectClient.getOrCreate(context)
+        val granted = client.permissionController.getGrantedPermissions()
+        return "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" in granted
+    }
+
+    suspend fun hasPermissionAsync(context: Context): Boolean {
+        return hasBasicPermissionAsync(context) && hasBackgroundPermissionAsync(context)
     }
 
     // Синхронная проверка для виджета (только доступность Health Connect)
