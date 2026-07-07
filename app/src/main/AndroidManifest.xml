@@ -74,14 +74,7 @@
                 android:resource="@xml/dashboard_widget_info" />
         </receiver>
 
-        <receiver
-            android:name=".widget.IndicatorUpdateReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.dedm.dns.UPDATE_INDICATOR" />
-                <action android:name="android.intent.action.USER_PRESENT" />
-            </intent-filter>
-        </receiver>
+
 
     </application>
 

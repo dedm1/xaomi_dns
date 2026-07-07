@@ -8,9 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.widget.RemoteViews
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 import com.dedm.dns.DnsManager
 import com.dedm.dns.DnsRepository
 import com.dedm.dns.DnsWidgetProvider
@@ -24,9 +27,6 @@ class DashboardWidgetProvider : AppWidgetProvider() {
         for (appWidgetId in appWidgetIds) {
             updateWidget(context, appWidgetManager, appWidgetId)
         }
-        // НЕ вызываем updateStepsAsync здесь — воркер сам планирует следующий запуск.
-        // Иначе каждый onUpdate отменяет запланированный интервал воркера.
-        IndicatorUpdateReceiver.startUpdates(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -49,7 +49,6 @@ class DashboardWidgetProvider : AppWidgetProvider() {
                 forceSync(context)
             }
         }
-        IndicatorUpdateReceiver.startUpdates(context)
     }
     
     private fun forceSync(context: Context) {
@@ -61,15 +60,16 @@ class DashboardWidgetProvider : AppWidgetProvider() {
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        // Запускаем обновление индикатора (первая синхронизация произойдет автоматически)
-        IndicatorUpdateReceiver.startUpdates(context)
+        // Запускаем периодическое фоновое обновление данных (15 минут)
+        schedulePeriodicUpdate(context)
+        // И делаем первый немедленный запуск при создании
+        updateStepsAsync(context)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         WorkManager.getInstance(context).cancelUniqueWork(DashboardUpdateWorker.WORK_NAME)
         WorkManager.getInstance(context).cancelUniqueWork("dashboard_periodic_update")
-        IndicatorUpdateReceiver.cancelUpdates(context)
     }
 
     private fun toggleDns(context: Context) {
@@ -263,5 +263,14 @@ class DashboardWidgetProvider : AppWidgetProvider() {
             }
         }
 
+        fun schedulePeriodicUpdate(context: Context) {
+            val request = PeriodicWorkRequestBuilder<DashboardUpdateWorker>(15, TimeUnit.MINUTES)
+                .build()
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                "dashboard_periodic_update",
+                ExistingPeriodicWorkPolicy.KEEP,
+                request
+            )
+        }
     }
 }
